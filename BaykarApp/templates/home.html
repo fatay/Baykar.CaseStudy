@@ -1,0 +1,840 @@
+<html>
+
+<head>
+    <title>Baykar.CaseStudy</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Add bootstrap, font-awesome, toastr stylesheet -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.3.0/css/font-awesome.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/css/toastr.min.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/jquery.dataTables.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lora&display=swap" rel="stylesheet">
+
+    <!-- Add jquery, bootstrap and toastr -->
+    <script src="https://code.jquery.com/jquery-3.6.3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootbox.js/4.4.0/bootbox.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+
+    <style>
+        .btn-info {
+            background-color: #250095 !important;
+            border: 1px solid #250095 !important;
+            border-radius: 0% !important;
+            width: 100% !important;
+        }
+
+        .bg-success {
+            background-color: #250095 !important;
+        }
+
+        .tableHeader {
+            background-color: #250095 !important;
+            color: #FFF;
+        }
+
+        .radius {
+            border-radius: 80% !important;
+            font-size: 12px;
+            padding: 8px;
+            margin-bottom: 4px;
+        }
+
+        .bootbox-close-button {
+            display: none !important;
+        }
+
+        #categoryTable_wrapper,
+        #vehicleTable_wrapper {
+            margin-top: 1em;
+        }
+
+        .header {
+            font-family: 'Lora', serif;
+            margin-bottom: 36px;
+        }
+    </style>
+
+    <script>
+        $(function () {
+
+            // Get CSRF token for same origin policy
+            var csrftoken = $.cookie('csrftoken');
+
+            // These HTTP methods do not require CSRF protection
+            function csrfSafeMethod(method) {
+                return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
+            }
+
+            // Use csrf token while doing post request, because POST doesnt't have preflight req.
+            $.ajaxSetup({
+
+                // Same Domain : true
+                crossDomain: false,
+
+                // Obviates need for sameOrigin test
+                beforeSend: function (xhr, settings) {
+                    if (!csrfSafeMethod(settings.type)) {
+                        xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                    }
+                }
+
+            });
+
+            // JWT Auth
+            var accessToken = localStorage.getItem('access-token');
+            var refreshToken = localStorage.getItem('refresh-token');
+
+            if (accessToken && refreshToken) {
+                verifyToken(accessToken);
+            }
+            else {
+                window.location.href = "http://127.0.0.1:8000/";
+            }
+
+            function verifyToken(accessToken) {
+
+                var tokenModel = {
+                    "token": accessToken
+                }
+
+                $.ajax({
+                    type: "POST",
+                    url: "http://127.0.0.1:8000/auth/token/verify/",
+                    data: tokenModel,
+                    async: false,
+                    success: function () {
+
+                    },
+                    error: function () {
+                        setNewTokenUsingRefreshToken();
+                    }
+                });
+            }
+
+            function setNewTokenUsingRefreshToken() {
+
+                var refreshToken = localStorage.getItem('refresh-token');
+
+                let refreshTokenModel = {
+                    "refresh": refreshToken
+                };
+
+                $.ajax({
+                    type: "POST",
+                    async: false,
+                    url: "http://127.0.0.1:8000/auth/token/refresh/",
+                    data: refreshTokenModel,
+                    success: function (response) {
+
+                        var newTokenModel = {
+                            "token": response.access
+                        }
+
+                        $.ajax({
+                            type: "POST",
+                            url: "http://127.0.0.1:8000/auth/token/verify/",
+                            data: newTokenModel,
+                            async: false,
+                            success: function () {
+                                localStorage.setItem('access-token', response.access);
+                            },
+                            error: function () {
+                                toastr.warning("Your session has expired.")
+                                window.location.href = "http://127.0.0.1:8000/";
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+        // Initialization of datatable.js
+        $(document).ready(function () {
+            syncCategoryTable();
+            syncAirVehicleTable();
+        });
+
+        // Synchronize categories <-> DB
+        function syncCategoryTable() {
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/category',
+                type: 'GET',
+                success: function (data) {
+
+                    var categoryColumns = [];
+
+                    categoryColumns.push({
+                        title: "",
+                        data: "id",
+                        visible: false
+                    });
+
+                    categoryColumns.push({
+                        title: "Category Name",
+                        data: "name",
+                    });
+
+                    categoryColumns.push({
+                        title: "",
+                        data: "id",
+                        orderable: false,
+                        render: function (datum, type, row) {
+                            var btn = `<div style="text-align:center">
+                                            <button class="btn btnUpdateCategory btn-primary radius" data-id="${row.id}"
+                                                data-name="${row.name}">
+                                                <i class="fa fa-edit"></i>
+                                            </button>
+                                        </div>`;
+                            return btn;
+                        }
+                    })
+
+                    $("#categoryTable").DataTable({
+                        data: data,
+                        columns: categoryColumns,
+                        destroy: true
+                    });
+                }
+            });
+        }
+
+        // Synchronize airvehicles <-> DB
+        function syncAirVehicleTable() {
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/airvehicle',
+                type: 'GET',
+                success: function (data) {
+
+                    var airVehicleColumns = [];
+
+                    airVehicleColumns.push({
+                        title: "",
+                        data: "id",
+                        visible: false
+                    });
+
+                    airVehicleColumns.push({
+                        title: "Brand Name",
+                        data: "name",
+                    });
+
+                    airVehicleColumns.push({
+                        title: "Model Name",
+                        data: "model_name",
+                    });
+
+                    airVehicleColumns.push({
+                        title: "Tail Number",
+                        data: "tail_number",
+                    });
+
+                    airVehicleColumns.push({
+                        title: "IFF Code",
+                        data: "iff_code",
+                    });
+
+                    airVehicleColumns.push({
+                        title: "Weight",
+                        data: "weight",
+                    });
+
+                    airVehicleColumns.push({
+                        title: "",
+                        data: "id",
+                        orderable: false,
+                        render: function (datum, type, row) {
+                            var btn = `<div style="text-align:center">
+                                            <button class="btn btnUpdateVehicle btn-primary radius" data-id="${row.id}"
+                                                data-name="${row.name}" data-modelname="${row.model_name}"
+                                                data-tailnumber="${row.tail_number}" data-iffcode="${row.iff_code}"
+                                                data-categoryid="${row.category}" data-weight="${row.weight}">
+                                                <i class="fa fa-edit"></i>
+                                            </button>
+                                            <button class="btn btnDeleteVehicle btn-danger radius" id="${row.id}">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        </div>`;
+                            return btn;
+                        }
+                    })
+
+                    $("#vehicleTable").DataTable({
+                        data: data,
+                        columns: airVehicleColumns,
+                        destroy: true
+                    });
+                }
+            });
+        }
+
+        // LogOut
+        function logout() {
+
+            localStorage.removeItem("access-token");
+            localStorage.removeItem("refresh-token");
+            window.location.href = "http://127.0.0.1:8000/";
+
+        }
+
+        // Add Category (REST API)
+        function addCategory() {
+
+            let categoryName = $("#categoryNameAdd").val();
+
+            // Validations
+            if (categoryName.length === 0) {
+                toastr.warning("The category name field cannot be empty.")
+                return;
+            }
+
+            if (categoryName.length < 4) {
+                toastr.warning("The category name field must contain a minimum of 4 characters.")
+                return;
+            }
+
+            if (categoryName.length > 120) {
+                toastr.warning("The category name field can contain up to 120 characters.")
+                return;
+            }
+
+            // Update Operation
+            let addCategoryModel = {
+                name: categoryName
+            }
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/category',
+                type: 'POST',
+                data: JSON.stringify(addCategoryModel),
+                success: function (data) {
+                    syncCategoryTable();
+                    toastr.success("Category added successfully.");
+                    $("#addCategoryModal").modal("hide");
+                },
+                error: function () {
+                    toastr.error("Something went wrong.")
+                }
+            });
+        }
+
+        // Add Category (Modal)
+        $(document).on("click", ".btnAddCategory", function () {
+
+            $("#addCategoryModal").modal("show");
+            $("#categoryNameAdd").val("");
+
+        });
+
+        // Update Category (Modal)
+        $(document).on("click", ".btnUpdateCategory", function () {
+
+            let categoryId = $(this).data("id");
+            let categoryName = $(this).data("name");
+
+            $("#updateCategoryModal").modal("show");
+            $("#categoryIdUpdate").val(categoryId);
+            $("#categoryNameUpdate").val(categoryName);
+
+        });
+
+        // Update Category (REST API)
+        function updateCategory() {
+
+            let categoryId = $("#categoryIdUpdate").val();
+            let categoryName = $("#categoryNameUpdate").val();
+
+            // Validations
+            if (categoryName.length === 0) {
+                toastr.warning("The category name field cannot be empty.")
+                return;
+            }
+
+            if (categoryName.length < 4) {
+                toastr.warning("The category name field must contain a minimum of 4 characters.")
+                return;
+            }
+
+            if (categoryName.length > 120) {
+                toastr.warning("The category name field can contain up to 120 characters.")
+                return;
+            }
+
+            // Update Operation
+            let updatCategoryModel = {
+                id: categoryId,
+                name: categoryName
+            }
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/category',
+                type: 'PUT',
+                data: JSON.stringify(updatCategoryModel),
+                success: function (data) {
+                    syncCategoryTable();
+                    toastr.success("Category updated successfully.");
+                    $("#updateCategoryModal").modal("hide");
+                },
+                error: function () {
+                    toastr.error("Something went wrong.")
+                }
+            });
+        }
+
+        // Add Vehicle (Modal)
+        $(document).on("click", ".btnAddVehicle", function () {
+
+            $("#addVehicleModal").modal("show");
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/category',
+                type: 'GET',
+                success: function (items) {
+                    $('#vehicleCategoryAdd').empty();
+                    $.each(items, function (i, item) {
+                        $('#vehicleCategoryAdd').append($('<option>', {
+                            value: item.id,
+                            text: item.name
+                        }));
+                    });
+                }
+            });
+
+        });
+
+        // Add Vehicle (REST API)
+        function addVehicle() {
+
+            let vehicleName = $("#vehicleNameAdd").val();
+            let vehicleModelName = $("#vehicleModelNameAdd").val();
+            let vehicleCategory = $("#vehicleCategoryAdd").val();
+            let vehicleTailNumber = $("#vehicleTailNumberAdd").val();
+            let vehicleIFFCode = $("#vehicleIFFCodeAdd").val();
+            let vehicleWeight = $("#vehicleWeightAdd").val();
+
+            // Validations
+            if (vehicleName.length === 0) {
+                toastr.warning("The name field cannot be empty.")
+                return;
+            }
+
+            if (vehicleModelName.length === 0) {
+                toastr.warning("The model name field cannot be empty.")
+                return;
+            }
+
+            if (vehicleTailNumber.length === 0) {
+                toastr.warning("The tail number field cannot be empty.")
+                return;
+            }
+
+            if (vehicleIFFCode.length === 0) {
+                toastr.warning("The IFF Code field cannot be empty.")
+                return;
+            }
+
+            if (vehicleWeight.length === 0) {
+                toastr.warning("The weight field cannot be empty.")
+                return;
+            }
+
+            // Add Operation
+            let addVehicleModel = {
+                name: vehicleName,
+                model_name: vehicleModelName,
+                category: vehicleCategory,
+                tail_number: vehicleTailNumber,
+                iff_code: vehicleIFFCode,
+                weight: vehicleWeight
+            };
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/airvehicle',
+                type: 'POST',
+                data: JSON.stringify(addVehicleModel),
+                success: function (data) {
+                    syncAirVehicleTable();
+                    toastr.success("Vehicle added successfully.");
+                    $("#addVehicleModal").modal("hide");
+                },
+                error: function () {
+                    toastr.error("Something went wrong.")
+                }
+            });
+        }
+
+        // Update Vehicle (Modal)
+        $(document).on("click", ".btnUpdateVehicle", function () {
+            let that = $(this);
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/category',
+                type: 'GET',
+                success: function (items) {
+                    $('#vehicleCategoryUpdate').empty();
+                    $.each(items, function (i, item) {
+                        $('#vehicleCategoryUpdate').append($('<option>', {
+                            value: item.id,
+                            text: item.name
+                        }));
+                    });
+
+                    let vehicleId = $(that).data("id");
+                    let vehicleName = $(that).data("name");
+                    let vehicleModelName = $(that).data("modelname");
+                    let tailNumber = $(that).data("tailnumber");
+                    let iffCode = $(that).data("iffcode");
+                    let categoryId = $(that).data("categoryid");
+                    let weight = $(that).data("weight");
+
+                    $("#updateVehicleModal").modal("show");
+                    $("#vehicleIdUpdate").val(vehicleId);
+                    $("#vehicleNameUpdate").val(vehicleName);
+                    $("#vehicleModelNameUpdate").val(vehicleModelName);
+                    $("#vehicleTailNumberUpdate").val(tailNumber);
+                    $("#vehicleIFFCodeUpdate").val(iffCode);
+                    $("#vehicleCategoryUpdate").val(categoryId);
+                    $("#vehicleWeightUpdate").val(weight);
+
+                }
+            });
+        });
+
+        // Update Vehicle (REST API)
+        function updateVehicle() {
+
+            let vehicleId = $("#vehicleIdUpdate").val();
+            let vehicleName = $("#vehicleNameUpdate").val();
+            let vehicleModelName = $("#vehicleModelNameUpdate").val();
+            let vehicleCategory = $("#vehicleCategoryUpdate").val();
+            let vehicleTailNumber = $("#vehicleTailNumberUpdate").val();
+            let vehicleIFFCode = $("#vehicleIFFCodeUpdate").val();
+            let vehicleWeight = $("#vehicleWeightUpdate").val();
+
+            // Validations
+            if (vehicleName.length === 0) {
+                toastr.warning("The name field cannot be empty.")
+                return;
+            }
+
+            if (vehicleModelName.length === 0) {
+                toastr.warning("The model name field cannot be empty.")
+                return;
+            }
+
+            if (vehicleTailNumber.length === 0) {
+                toastr.warning("The tail number field cannot be empty.")
+                return;
+            }
+
+            if (vehicleIFFCode.length === 0) {
+                toastr.warning("The IFF Code field cannot be empty.")
+                return;
+            }
+
+            if (vehicleWeight.length === 0) {
+                toastr.warning("The weight field cannot be empty.")
+                return;
+            }
+
+            // Update Operation
+            let updateVehicleModel = {
+                id: vehicleId,
+                name: vehicleName,
+                model_name: vehicleModelName,
+                category: vehicleCategory,
+                tail_number: vehicleTailNumber,
+                iff_code: vehicleIFFCode,
+                weight: vehicleWeight
+            }
+
+            $.ajax({
+                url: 'http://127.0.0.1:8000/airvehicle',
+                type: 'PUT',
+                data: JSON.stringify(updateVehicleModel),
+                success: function (data) {
+                    syncAirVehicleTable();
+                    toastr.success("Vehicle updated successfully.")
+                    $("#updateVehicleModal").modal("hide");
+                },
+                error: function () {
+                    toastr.error("Something went wrong.")
+                }
+            });
+        }
+
+        // Delete Vehicle
+        $(document).on("click", ".btnDeleteVehicle", function () {
+
+            let vehicleId = this.id;
+
+            if (vehicleId) {
+
+                bootbox.confirm({
+                    title: 'Are you sure to delete this item?',
+                    message: 'This operation cannot be undone.',
+                    buttons: {
+                        cancel: {
+                            label: '<i class="fa fa-times"></i> Cancel'
+                        },
+                        confirm: {
+                            className: 'btn-danger',
+                            label: '<i class="fa fa-trash"></i> Delete'
+                        }
+                    },
+                    callback: function (result) {
+                        if (result) {
+                            $.ajax({
+                                url: "http://127.0.0.1:8000/airvehicle/" + vehicleId,
+                                type: 'DELETE',
+                                success: function () {
+                                    syncAirVehicleTable();
+                                    toastr.success("Item deleted successfully.");
+                                },
+                                error: function () {
+                                    toastr.error("Something went wrong.")
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        })        
+    </script>
+</head>
+
+<body class="bg">
+
+    <!-- App Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+        <a class="navbar-brand" href="#">Baykar.CaseStudy | Air Vehicles</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+            <ul class="nav navbar-nav ml-auto">
+                <li class="nav-item active">
+                    <button onclick="logout()" class="btn btn-success"
+                        style="background-color: #250095 !important; border:none;">
+                        <i class="fa fa-sign-out" aria-hidden="true"></i> Logout
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container" style="margin-top: 2em;">
+        <div class="row">
+
+            <!-- Categories -->
+            <div class="col-sm-12 col-md-5 col-lg-5">
+                <button class="btn btn-info btnAddCategory">
+                    <i class="fa fa-plus"></i> Add Category
+                </button>
+                <div style="margin-top: 24px; text-align: center;">
+                    <h4 class="header"><b><i class="fa fa-database"></i> Categories</b></h4>
+                    <table id="categoryTable" class="datatable table table-bordered" style="width:100%;"></table>
+                </div>
+            </div>
+
+            <!-- Air Vehicles -->
+            <div class="col-sm-12 col-md-7 col-lg-7">
+                <button class="btn btnAddVehicle btn-info">
+                    <i class="fa fa-plus"></i> Add Vehicle
+                </button>
+                <div style="margin-top: 24px; text-align: center;">
+                    <h4 class="header"><b><i class="fa fa-plane"></i> Air Vehicles</b></h4>
+                    <table id="vehicleTable" class="datatable table table-bordered" style="width:100%"></table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal For Add A Category -->
+    <div class="modal fade" id="addCategoryModal" tabindex="-1" role="dialog" aria-labelledby="addCategoryModal">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Category</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="categoryNameAdd"><b>Category Name :</b></label>
+                        <input id="categoryNameAdd" name="categoryNameAdd" type="text" class="form-control"
+                            minlength="3" maxlength="120" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" onclick="addCategory()" class="btn btn-primary">Save
+                        changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal For Update A Category -->
+    <div class="modal fade" id="updateCategoryModal" tabindex="-1" role="dialog" aria-labelledby="updateCategoryModal">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Update Category</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <input id="categoryIdUpdate" type="hidden">
+                        <label for="categoryNameUpdate"><b>Category Name :</b></label>
+                        <input id="categoryNameUpdate" name="categoryNameUpdate" type="text" class="form-control"
+                            minlength="3" maxlength="120" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" onclick="updateCategory()" class="btn btn-primary">Save
+                        changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal For Add A Vehicle -->
+    <div class="modal fade" id="addVehicleModal" tabindex="-1" role="dialog" aria-labelledby="addVehicleModal">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Air Vehicle</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="vehicleNameAdd">Brand Name</label>
+                        <input id="vehicleNameAdd" name="vehicleNameAdd" type="text" class="form-control" minlength="4"
+                            maxlength="400" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleModelNameAdd">Vehicle Model Name</label>
+                        <input id="vehicleModelNameAdd" name="vehicleModelNameAdd" type="text" class="form-control"
+                            minlength="4" maxlength="120" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleCategoryAdd">Category</label>
+                        <select id="vehicleCategoryAdd" class="form-control">
+                            <!-- {% for category in all_categories %}
+                            <option value="{{category.id}}">{{ category.name }}</option>
+                            {% endfor %} -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleTailNumberAdd">Tail Number</label>
+                        <input id="vehicleTailNumberAdd" name="vehicleTailNumberAdd" type="text" class="form-control"
+                            minlength="4" maxlength="10" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleIFFCodeAdd">IFF Code</label>
+                        <input id="vehicleIFFCodeAdd" name="vehicleIFFCodeAdd" type="text" pattern="[0-9]"
+                            class="form-control" minlength="4" maxlength="4" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleWeightAdd">Weight</label>
+                        <input id="vehicleWeightAdd" name="vehicleWeightAdd" type="number" pattern="[0-9.]"
+                            class="form-control" minlength="1" maxlength="8" required>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" onclick="addVehicle()" class="btn btn-primary">Save
+                        changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal For Update A Vehicle -->i
+    <div class="modal fade" id="updateVehicleModal" tabindex="-1" role="dialog" aria-labelledby="updateVehicleModal">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Update Air Vehicle</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <input id="vehicleIdUpdate" type="hidden">
+
+                    <div class="form-group">
+                        <label for="vehicleNameUpdate">Brand Name</label>
+                        <input id="vehicleNameUpdate" name="vehicleNameUpdate" type="text" class="form-control"
+                            minlength="4" maxlength="400" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleModelNameUpdate">Vehicle Model Name</label>
+                        <input id="vehicleModelNameUpdate" name="vehicleModelNameUpdate" type="text"
+                            class="form-control" minlength="4" maxlength="120" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleCategoryUpdate">Category</label>
+                        <select id="vehicleCategoryUpdate" class="form-control">
+                            <!-- {% for category in all_categories %}
+                            <option value="{{category.id}}">{{ category.name }}</option>
+                            {% endfor %} -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleTailNumberUpdate">Tail Number</label>
+                        <input id="vehicleTailNumberUpdate" name="vehicleTailNumberUpdate" type="text"
+                            class="form-control" minlength="4" maxlength="10" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleIFFCodeUpdate">IFF Code</label>
+                        <input id="vehicleIFFCodeUpdate" name="vehicleIFFCodeUpdate" type="text" pattern="[0-9]"
+                            class="form-control" minlength="4" maxlength="4" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vehicleWeightUpdate">Weight</label>
+                        <input id="vehicleWeightUpdate" name="vehicleWeightUpdate" type="number" pattern="[0-9.]"
+                            class="form-control" minlength="1" maxlength="8" required>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="button" onclick="updateVehicle()" class="btn btn-primary">Save
+                        changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

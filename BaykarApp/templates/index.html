@@ -1,0 +1,316 @@
+<html>
+
+<head>
+    <title>Baykar.CaseStudy</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Add bootstrap, font-awesome, toastr stylesheet -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.3.0/css/font-awesome.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/css/toastr.min.css" />
+
+    <!-- Add jquery, bootstrap and toastr -->
+    <script src="https://code.jquery.com/jquery-3.6.3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script>
+
+    <script>
+        $(function () {
+
+            // Get CSRF token for same origin policy
+            var csrftoken = $.cookie('csrftoken');
+
+            // These HTTP methods do not require CSRF protection
+            function csrfSafeMethod(method) {
+                return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
+            }
+
+            // Use csrf token while doing post request, because POST doesnt't have preflight req.
+            $.ajaxSetup({
+
+                // Same Domain : true
+                crossDomain: false,
+
+                // Obviates need for sameOrigin test
+                beforeSend: function (xhr, settings) {
+                    if (!csrfSafeMethod(settings.type)) {
+                        xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                    }
+                }
+
+            });
+
+            // JWT Auth
+            var accessToken = localStorage.getItem('access-token');
+            var refreshToken = localStorage.getItem('refresh-token');
+
+            if (accessToken && refreshToken) {
+                verifyToken(accessToken);
+            } 
+            else {
+                //window.location.href = "http://127.0.0.1:8000/";
+            }
+
+            function verifyToken(accessToken) {
+
+                var tokenModel = {
+                    "token": accessToken
+                }
+
+                $.ajax({
+                    type: "POST",
+                    url: "http://127.0.0.1:8000/auth/token/verify/",
+                    data: tokenModel,
+                    async: false,
+                    success: function () {
+                        window.location.href = "http://127.0.0.1:8000/home/";
+                    },
+                    error: function () {
+                        setNewTokenUsingRefreshToken();
+                    }
+                });
+            }
+
+            function setNewTokenUsingRefreshToken() {
+
+                var refreshToken = localStorage.getItem('refresh-token');
+
+                let refreshTokenModel = {
+                    "refresh": refreshToken
+                };
+
+                $.ajax({
+                    type: "POST",
+                    async: false,
+                    url: "http://127.0.0.1:8000/auth/token/refresh/",
+                    data: refreshTokenModel,
+                    success: function (response) {
+                        
+                        var newTokenModel = {
+                            "token" : response.access
+                        }
+
+                        $.ajax({
+                            type: "POST",
+                            url: "http://127.0.0.1:8000/auth/token/verify/",
+                            data: newTokenModel,
+                            async: false,
+                            success: function () {
+                                localStorage.setItem('access-token', response.access);
+                                window.location.href = "http://127.0.0.1:8000/home/";
+                            },
+                            error: function () {
+                                toastr.warning("Your session has expired.")
+                                //window.location.href = "http://127.0.0.1:8000/";
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+    </script>
+
+</head>
+
+<body>
+    <!-- App Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <a class="navbar-brand" href="#">Baykar.CaseStudy | Login & Register</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+            <ul class="navbar-nav mr-auto"></ul>
+        </div>
+    </nav>
+
+    <!-- App Container -->
+    <div class="container">
+        <div class="row">
+
+            <!-- Offset -->
+            <div class="col-sm-12 col-md-1 col-lg-1"></div>
+
+            <!-- Login Form -->
+            <div class="col-sm-12 col-md-4 col-lg-4">
+                <form id="loginForm" style="margin-top: 4em; padding: 1em;">
+
+                    {% csrf_token %}
+
+                    <h3>Login</h3>
+                    <hr>
+                    <div class="form-group">
+                        <label for="loginUsername">Username : </label>
+                        <input id="loginUsername" name="loginUsername" type="text" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password :</label>
+                        <input name="loginPassword" id="loginPassword" type="password" class="form-control" required>
+                    </div><br />
+                    <button type="submit" class="btn btn-success" style="width: 100%;">Login</button>
+                </form>
+            </div>
+
+            <!-- Register Form -->
+            <div class="col-sm-12 col-md-4 col-lg-4">
+                <form id="registerForm" style="margin-top: 4em; padding: 1em;">
+
+                    {% csrf_token %}
+
+                    <h3>Register</h3>
+                    <hr>
+                    <div id="validations" style="color: red;"></div>
+                    <div class="form-group">
+                        <label for="registerUsername">Username : </label>
+                        <input id="registerUsername" name="registerUsername" type="text" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerEmail">Mail Address : </label>
+                        <input id="registerEmail" name="registerEmail" type="email" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPassword1">Password :</label>
+                        <input id="registerPassword1" name="registerPassword1" type="password" class="form-control"
+                            required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPassword2">Password (again) :</label>
+                        <input id="registerPassword2" name="registerPassword2" type="password" class="form-control"
+                            required>
+                    </div><br />
+                    <button type="submit" class="btn btn-success" style="width: 100%;">Register</button>
+                </form>
+            </div>
+
+            <!-- Offset -->
+            <div class="col-sm-12 col-md-1 col-lg-1"></div>
+        </div>
+    </div>
+
+    <script>
+
+        // LOGIN
+        $('#loginForm').submit(function () {
+
+            let loginModel = {
+                "username": $('#loginUsername').val(),
+                "password": $('#loginPassword').val(),
+            }
+
+            $.ajax({
+                type: "POST",
+                url: "http://127.0.0.1:8000/auth/token/",
+                data: loginModel,
+                async: true,
+                success: function (response) {
+
+                    // If user logged in succesfully
+                    if (response.access && response.refresh) {
+
+                        // Set Tokens
+                        localStorage.setItem('access-token', response.access);
+                        localStorage.setItem('refresh-token', response.refresh);
+
+                        toastr.success("Login successful. Redirecting...");
+
+                        // Success message
+                        setTimeout(function () {
+                            window.location.href = "http://127.0.0.1:8000/home/"
+                        }, 3000);
+
+                    }
+                    else {
+                        toastr.warning("The username or password is incorrect.");
+                    }
+                },
+                error: function () {
+                    toastr.warning("The username or password is incorrect.");
+                }
+            });
+
+            return false;
+
+        });
+
+        // REGISTER 
+        $('#registerForm').submit(function () {
+
+            let registerModel = {
+                "username": $('#registerUsername').val(),
+                "email": $('#registerEmail').val(),
+                "password1": $('#registerPassword1').val(),
+                "password2": $('#registerPassword2').val(),
+            }
+
+            $.ajax({
+                type: "POST",
+                async: true,
+                url: "http://127.0.0.1:8000/register/",
+                data: registerModel,
+                success: function (response) {
+
+                    // If user created successfully 
+                    if (response.user) {
+
+                        // Clear form
+                        $('#registerUsername').val("");
+                        $('#registerEmail').val("");
+                        $('#registerPassword1').val("");
+                        $('#registerPassword2').val("");
+                        $("#validations").html("");
+
+                        // Show register success mesage
+                        toastr.success("Register completed succesfully. You can login with your username & password.");
+
+                    }
+
+                },
+                error: function (err) {
+
+                    // If validation errors was occured; add this errors and show to user.
+
+                    var response = err.responseJSON;
+
+                    let validationErrors = "";
+
+                    if (response.username) {
+                        response.username.forEach(function (item) {
+                            validationErrors += "*" + item + "<br />";
+                        });
+                    }
+
+                    if (response.password1) {
+                        response.password1.forEach(function (item) {
+                            validationErrors += "*" + item + "<br />";
+                        });
+                    }
+
+                    if (response.password2) {
+                        response.password2.forEach(function (item) {
+                            validationErrors += "*" + item + "<br />";
+                        });
+                    }
+
+                    if (response.email) {
+                        response.email.forEach(function (item) {
+                            validationErrors += "*" + item + "<br />";
+                        });
+                    }
+
+                    $("#validations").html(validationErrors);
+                }
+            });
+
+            return false;
+
+        });
+
+    </script>
+</body>
+
+</html>
