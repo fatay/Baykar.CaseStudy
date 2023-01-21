@@ -62,7 +62,6 @@ python manage.py createsuperuser
 
 Or [Watch Youtube video](https://www.youtube.com/watch?v=e3bQlD59Tpo)
 
-## Application Module List
 ## Project Libraries
 The modules used by Django are listed below;
 
